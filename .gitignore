@@ -1,0 +1,14 @@
+# Credenciales y llaves de servicio GCP (Crítico)
+*.json
+gcp-key.json
+
+# Entorno Virtual
+venv/
+.venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.streamlit/secrets.toml
