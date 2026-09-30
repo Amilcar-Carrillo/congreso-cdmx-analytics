@@ -68,16 +68,4 @@ Plataforma de inteligencia legislativa para el análisis y consulta semántica d
 
          streamlit run app.py
 
----
 
-### Paso 3: Guardar el cambio en GitHub
-1. En la parte superior derecha de la página de GitHub, haz clic en el botón verde **Commit changes...**.
-2. En el cuadro de diálogo que se abre, confirma haciendo clic en **Commit changes**.
-
----
-
-### Paso 4: Sincronizar tu máquina local
-Regresa a la terminal de VS Code y ejecuta:
-
-```powershell
-git pull origin main
