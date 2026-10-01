@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from google.cloud import bigquery
 from google import genai
+from google.oauth2 import service_account
 
 # ==============================================================================
 # 1. CONFIGURACIÓN DE PÁGINA
@@ -15,20 +16,38 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 2. CONEXIÓN A GCP (BigQuery & Vertex AI)
+# 2. CONEXIÓN HÍBRIDA A GCP (Streamlit Cloud Secrets / Local gcp-key.json)
 # ==============================================================================
-GCP_KEY_PATH = "gcp-key.json"
 PROJECT_ID = "proyecto-elt-gcp"
 LOCATION = "us-central1"
 DATASET_ID = "congreso_cdmx"
-
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCP_KEY_PATH
+GCP_KEY_PATH = "gcp-key.json"
 
 @st.cache_resource
 def get_clients():
-    bq = bigquery.Client(project=PROJECT_ID)
-    ai = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-    return bq, ai
+    # Modo Nube: Cargar desde st.secrets si existe
+    if "gcp_service_account" in st.secrets:
+        creds = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"]
+        )
+        bq = bigquery.Client(credentials=creds, project=creds.project_id)
+        # GenAI Client con credenciales de Vertex AI
+        ai = genai.Client(vertexai=True, project=creds.project_id, location=LOCATION)
+        return bq, ai
+
+    # Modo Local: Cargar desde el archivo físico si existe
+    elif os.path.exists(GCP_KEY_PATH):
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCP_KEY_PATH
+        creds = service_account.Credentials.from_service_account_file(GCP_KEY_PATH)
+        bq = bigquery.Client(credentials=creds, project=PROJECT_ID)
+        ai = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+        return bq, ai
+
+    # Fallback: Entorno con credenciales del sistema (ADC)
+    else:
+        bq = bigquery.Client(project=PROJECT_ID)
+        ai = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+        return bq, ai
 
 try:
     bq_client, ai_client = get_clients()
@@ -46,7 +65,10 @@ MAPA_LEGISLATURAS = {
 }
 
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Logo_Congreso_de_la_Ciudad_de_M%C3%A9xico.svg/1200px-Logo_Congreso_de_la_Ciudad_de_M%C3%A9xico.svg.png", width=190)
+    st.image(
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Logo_Congreso_de_la_Ciudad_de_M%C3%A9xico.svg/1200px-Logo_Congreso_de_la_Ciudad_de_M%C3%A9xico.svg.png", 
+        width=190
+    )
     st.title("Monitor Legislativo")
     st.caption("Congreso de la Ciudad de México | GCP & IA")
     st.markdown("---")
@@ -69,13 +91,11 @@ tab_bi, tab_rag = st.tabs(["📊 Monitor de Asistencias & Iniciativas", "🤖 As
 # PESTAÑA 1: ANALÍTICA INTEGRADA (ASISTENCIAS + LEYES APROBADAS)
 # ------------------------------------------------------------------------------
 with tab_bi:
-    # 1. Cargar Asistencias
     @st.cache_data(ttl=600)
     def load_asistencias():
         sql = f"SELECT * FROM `{PROJECT_ID}.{DATASET_ID}.vw_kpi_asistencias`"
         return bq_client.query(sql).to_dataframe()
 
-    # 2. Cargar Iniciativas y Leyes
     @st.cache_data(ttl=600)
     def load_iniciativas():
         sql = f"""
@@ -121,27 +141,29 @@ with tab_bi:
     
     if busqueda_texto.strip():
         txt = busqueda_texto.strip().lower()
-        df_filtrado_asist = df_filtrado_asist[
-            df_filtrado_asist["nombre_completo"].str.lower().str.contains(txt) |
-            df_filtrado_asist["distrito_alcaldia"].str.lower().str.contains(txt)
-        ]
-        df_filtrado_ini = df_filtrado_ini[
-            df_filtrado_ini["titulo"].str.lower().str.contains(txt) |
-            df_filtrado_ini["diputado_nombre"].str.lower().str.contains(txt) |
-            df_filtrado_ini["materia"].str.lower().str.contains(txt)
-        ]
+        if not df_filtrado_asist.empty:
+            df_filtrado_asist = df_filtrado_asist[
+                df_filtrado_asist["nombre_completo"].str.lower().str.contains(txt) |
+                df_filtrado_asist["distrito_alcaldia"].str.lower().str.contains(txt)
+            ]
+        if not df_filtrado_ini.empty:
+            df_filtrado_ini = df_filtrado_ini[
+                df_filtrado_ini["titulo"].str.lower().str.contains(txt) |
+                df_filtrado_ini["diputado_nombre"].str.lower().str.contains(txt) |
+                df_filtrado_ini["materia"].str.lower().str.contains(txt)
+            ]
 
     sub_grupo = f" · {partido_filtro}" if partido_filtro != "Todas las Bancadas" else ""
     st.subheader(f"🏛️ Monitor Parlamentario: {legislatura_sel}{sub_grupo}")
 
-    if df_leg_asist.empty:
+    if df_leg_asist.empty and df_leg_ini.empty:
         st.warning(f"ℹ️ Aún no hay datos cargados para la **{legislatura_sel}**.")
     else:
         # --- TARJETAS KPI COMBINADAS ---
         total_dips = len(df_filtrado_asist)
         prom_asist = df_filtrado_asist["porcentaje_asistencia"].mean() if total_dips > 0 else 0
         total_iniciativas = len(df_filtrado_ini)
-        total_aprobadas = len(df_filtrado_ini[df_filtrado_ini["estatus_proceso"] == "Aprobada por el Pleno"])
+        total_aprobadas = len(df_filtrado_ini[df_filtrado_ini["estatus_proceso"] == "Aprobada"])
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("👥 Legisladores", f"{total_dips}")
@@ -151,12 +173,12 @@ with tab_bi:
 
         st.markdown("---")
 
-        # --- SECCIÓN DESTACADA: CATÁLOGO DE LEYES Y DECRETOS APROBADOS ---
-        df_leyes = df_filtrado_ini[df_filtrado_ini["estatus_proceso"] == "Aprobada por el Pleno"].copy()
+        # --- SECCIÓN: INICIATIVAS APROBADAS ---
+        df_leyes = df_filtrado_ini[df_filtrado_ini["estatus_proceso"] == "Aprobada"].copy()
         
         st.markdown("##### ⚖️ Iniciativas Aprobadas por el Pleno (Convertidas en Ley o Decreto)")
         if df_leyes.empty:
-            st.info("No hay iniciativas con dictamen de ley aprobado para el filtro actual.")
+            st.info("No hay iniciativas aprobadas para los filtros seleccionados.")
         else:
             config_leyes = {
                 "iniciativa_id": st.column_config.TextColumn("Código", width="small"),
@@ -179,10 +201,13 @@ with tab_bi:
         c_graf1, c_graf2 = st.columns(2)
         with c_graf1:
             st.markdown("##### 📊 Asistencia Promedio por Bancada (%)")
-            resumen_asist = df_leg_asist.groupby("grupo_parlamentario")["porcentaje_asistencia"].mean().reset_index()
-            resumen_asist = resumen_asist.sort_values(by="porcentaje_asistencia", ascending=False)
-            resumen_asist.columns = ["Grupo Parlamentario", "Asistencia Promedio (%)"]
-            st.bar_chart(resumen_asist.set_index("Grupo Parlamentario"), color="#2563EB", horizontal=True)
+            if not df_leg_asist.empty:
+                resumen_asist = df_leg_asist.groupby("grupo_parlamentario")["porcentaje_asistencia"].mean().reset_index()
+                resumen_asist = resumen_asist.sort_values(by="porcentaje_asistencia", ascending=False)
+                resumen_asist.columns = ["Grupo Parlamentario", "Asistencia Promedio (%)"]
+                st.bar_chart(resumen_asist.set_index("Grupo Parlamentario"), color="#2563EB", horizontal=True)
+            else:
+                st.info("Sin registros de asistencias para graficar.")
 
         with c_graf2:
             st.markdown("##### 📜 Iniciativas por Grupo Parlamentario")
@@ -199,37 +224,38 @@ with tab_bi:
         # --- TABLA NOMINAL DE DIPUTADOS Y ASISTENCIAS ---
         st.markdown(f"##### 📋 Registro Nominal de Asistencias ({len(df_filtrado_asist)} legisladores)")
         
-        df_mostrar_asist = df_filtrado_asist[[
-            "nombre_completo", "grupo_parlamentario", "tipo_eleccion",
-            "distrito_alcaldia", "total_sesiones", "asistencias_presentes",
-            "faltas_justificadas", "faltas_injustificadas", "porcentaje_asistencia"
-        ]].copy()
+        if not df_filtrado_asist.empty:
+            df_mostrar_asist = df_filtrado_asist[[
+                "nombre_completo", "grupo_parlamentario", "tipo_eleccion",
+                "distrito_alcaldia", "total_sesiones", "asistencias_presentes",
+                "faltas_justificadas", "faltas_injustificadas", "porcentaje_asistencia"
+            ]].copy()
 
-        column_configuration = {
-            "nombre_completo": st.column_config.TextColumn("Diputada / Diputado", width="large"),
-            "grupo_parlamentario": st.column_config.TextColumn("Bancada", width="medium"),
-            "tipo_eleccion": st.column_config.TextColumn("Elección", width="small"),
-            "distrito_alcaldia": st.column_config.TextColumn("Distrito / Alcaldía", width="medium"),
-            "total_sesiones": st.column_config.NumberColumn("Sesiones", format="%d", width="small"),
-            "asistencias_presentes": st.column_config.NumberColumn("Asistencias", format="%d", width="small"),
-            "faltas_justificadas": st.column_config.NumberColumn("Justificadas", format="%d", width="small"),
-            "faltas_injustificadas": st.column_config.NumberColumn("Injustificadas", format="%d", width="small"),
-            "porcentaje_asistencia": st.column_config.ProgressColumn(
-                "% Asistencia",
-                format="%0.1f%%",
-                min_value=0,
-                max_value=100,
-                width="medium"
-            ),
-        }
+            column_configuration = {
+                "nombre_completo": st.column_config.TextColumn("Diputada / Diputado", width="large"),
+                "grupo_parlamentario": st.column_config.TextColumn("Bancada", width="medium"),
+                "tipo_eleccion": st.column_config.TextColumn("Elección", width="small"),
+                "distrito_alcaldia": st.column_config.TextColumn("Distrito / Alcaldía", width="medium"),
+                "total_sesiones": st.column_config.NumberColumn("Sesiones", format="%d", width="small"),
+                "asistencias_presentes": st.column_config.NumberColumn("Asistencias", format="%d", width="small"),
+                "faltas_justificadas": st.column_config.NumberColumn("Justificadas", format="%d", width="small"),
+                "faltas_injustificadas": st.column_config.NumberColumn("Injustificadas", format="%d", width="small"),
+                "porcentaje_asistencia": st.column_config.ProgressColumn(
+                    "% Asistencia",
+                    format="%0.1f%%",
+                    min_value=0,
+                    max_value=100,
+                    width="medium"
+                ),
+            }
 
-        st.dataframe(
-            df_mostrar_asist,
-            column_config=column_configuration,
-            use_container_width=True,
-            hide_index=True,
-            height=380
-        )
+            st.dataframe(
+                df_mostrar_asist,
+                column_config=column_configuration,
+                use_container_width=True,
+                hide_index=True,
+                height=380
+            )
 
 # ------------------------------------------------------------------------------
 # PESTAÑA 2: ASISTENTE RAG (BÚSQUEDA VECTORIAL CON GEMINI)
@@ -317,7 +343,7 @@ RESPUESTA FUNDAMENTADA:"""
                             contents=prompt_rag,
                         )
 
-                        st.subheader("🏛️ Respuesta del Asistente Legislativo:")
+                        st.subheader("🏛️️ Respuesta del Asistente Legislativo:")
                         st.success(response.text)
 
                         with st.expander("🔍 Ver iniciativas oficiales recuperadas (Similitud Coseno en BigQuery)"):
