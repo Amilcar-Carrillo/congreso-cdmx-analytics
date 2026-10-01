@@ -1,70 +1,56 @@
 import os
+import json
+import tempfile
 import streamlit as st
 import pandas as pd
 from google.cloud import bigquery
 from google import genai
-from google.oauth2 import service_account
 
 # ==============================================================================
 # 1. CONFIGURACIÓN DE PÁGINA
 # ==============================================================================
 st.set_page_config(
     page_title="Congreso CDMX | Monitor Legislativo e IA",
-    page_icon="🏛️️",
+    page_icon="🏛️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ==============================================================================
-# 2. CONEXIÓN HÍBRIDA A GCP (OAuth Scopes Explícitos para Vertex AI)
+# 2. CONEXIÓN HÍBRIDA A GCP (Vía GOOGLE_APPLICATION_CREDENTIALS)
 # ==============================================================================
 PROJECT_ID = "proyecto-elt-gcp"
 LOCATION = "us-central1"
 DATASET_ID = "congreso_cdmx"
 GCP_KEY_PATH = "gcp-key.json"
-SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
 @st.cache_resource
-def get_clients():
-    # 1. Modo Nube: Cargar desde st.secrets si existe
+def init_gcp_clients():
+    # 1. Modo Nube (Streamlit Cloud): Generar archivo temporal a partir de st.secrets
     if "gcp_service_account" in st.secrets:
-        creds = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=SCOPES
-        )
-        bq = bigquery.Client(credentials=creds, project=creds.project_id)
-        ai = genai.Client(
-            vertexai=True, 
-            project=creds.project_id, 
-            location=LOCATION,
-            credentials=creds
-        )
-        return bq, ai
-
-    # 2. Modo Local: Cargar desde el archivo físico si existe
+        key_dict = dict(st.secrets["gcp_service_account"])
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+            json.dump(key_dict, f)
+            temp_key_path = f.name
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_key_path
+        project_to_use = key_dict.get("project_id", PROJECT_ID)
+    
+    # 2. Modo Local: Si existe gcp-key.json físico
     elif os.path.exists(GCP_KEY_PATH):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCP_KEY_PATH
-        creds = service_account.Credentials.from_service_account_file(
-            GCP_KEY_PATH,
-            scopes=SCOPES
-        )
-        bq = bigquery.Client(credentials=creds, project=PROJECT_ID)
-        ai = genai.Client(
-            vertexai=True, 
-            project=PROJECT_ID, 
-            location=LOCATION,
-            credentials=creds
-        )
-        return bq, ai
-
-    # 3. Fallback: ADC
+        project_to_use = PROJECT_ID
+    
+    # 3. Fallback: ADC del sistema
     else:
-        bq = bigquery.Client(project=PROJECT_ID)
-        ai = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-        return bq, ai
+        project_to_use = PROJECT_ID
+
+    # Inicialización limpia sin conflicto de scopes
+    bq = bigquery.Client(project=project_to_use)
+    ai = genai.Client(vertexai=True, project=project_to_use, location=LOCATION)
+    return bq, ai
 
 try:
-    bq_client, ai_client = get_clients()
+    bq_client, ai_client = init_gcp_clients()
 except Exception as e:
     st.error(f"Error conectando con GCP: {e}")
     st.stop()
