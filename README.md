@@ -1,12 +1,12 @@
 # 🏛 Congreso CDMX: Data Pipeline, Hybrid RAG & Legislative Analytics
 
-Plataforma de inteligencia legislativa para el análisis y consulta semántica de la actividad parlamentaria del Congreso de la Ciudad de México (I, II y III Legislaturas), construida sobre una arquitectura Serverless en Google Cloud Platform (GCP)[cite: 18, 20].
+Plataforma de inteligencia legislativa para el análisis y consulta semántica de la actividad parlamentaria del Congreso de la Ciudad de México (I, II y III Legislaturas), construida sobre una arquitectura Serverless en Google Cloud Platform (GCP).
 
 ---
 
 ## 📊 Dashboards y Demos en Vivo
-* 🔗 **Tablero Ejecutivo en Looker Studio:** [Ver Dashboard de Asistencias e Iniciativas](https://datastudio.google.com/reporting/6d4edf9f-de42-4600-b6ce-a27a21b2ab05)[cite: 22, 31]
-* 💻 **Aplicación Analítica e Interfaz RAG:** Streamlit con búsqueda vectorial (Vertex AI) y analítica SQL en tiempo real[cite: 12, 14].
+* 🔗 **Tablero Ejecutivo en Looker Studio:** [Ver Dashboard de Asistencias e Iniciativas](https://datastudio.google.com/reporting/6d4edf9f-de42-4600-b6ce-a27a21b2ab05)
+* 💻 **Aplicación Analítica e Interfaz RAG:** [Abrir Aplicación en Streamlit Cloud (Búsqueda Vectorial e Inferencia en Tiempo Real)](https://congreso-cdmx-analytics.streamlit.app/)
 
 ---
 
@@ -29,17 +29,17 @@ Plataforma de inteligencia legislativa para el análisis y consulta semántica d
 (vw_monitor_integral_diputados)                          (text-embedding-004 + Gemini)
 
 ### Componentes Clave:
-1. **Pipeline Serverless ELT:** Ingesta programada en Cloud Scheduler (martes y jueves a las 20:00 hrs) conectada a Cloud Run Functions con escala a 0 para optimización FinOps ($0 costo en reposo)[cite: 24, 25, 30].
-2. **Data Warehouse Dimensional:** Esquema relacional optimizado en BigQuery (`dim_diputados`, `fact_asistencias`, `fact_iniciativas_vectors`) con inserciones idempotentes[cite: 14, 26, 33].
-3. **Hybrid RAG Engine:** Supera las limitaciones del Dense Retrieval convencional al combinar agregaciones analíticas SQL (`COUNTIF` por estatus: Aprobada, En Dictamen, En Análisis, Desechada) con similitud coseno sobre vectores de 768 dimensiones (`text-embedding-004`)[cite: 13, 14, 19].
+1. **Pipeline Serverless ELT:** Ingesta programada en Cloud Scheduler (martes y jueves a las 20:00 hrs) conectada a Cloud Run Functions con escala a 0 para optimización FinOps ($0 costo en reposo).
+2. **Data Warehouse Dimensional:** Esquema relacional optimizado en BigQuery (`dim_diputados`, `fact_asistencias`, `fact_iniciativas_vectors`) con inserciones idempotentes.
+3. **Hybrid RAG Engine:** Supera las limitaciones del Dense Retrieval convencional al combinar agregaciones analíticas SQL (`COUNTIF` por estatus: Aprobada, En Dictamen, En Análisis, Desechada) con similitud coseno sobre vectores de 768 dimensiones (`text-embedding-004`).
 
 ---
 
 ## 🛠️ Stack Tecnológico
-* **Cloud & Serverless:** Google Cloud Platform (Cloud Run Functions, Cloud Scheduler, BigQuery)[cite: 21, 24, 26].
-* **IA & Generative AI:** Vertex AI (`text-embedding-004`), Gemini LLM, Vector Search (Similitud Coseno)[cite: 13, 14].
-* **Ingeniería de Datos:** Python 3.12, SQL (Vistas analíticas y cruces agregados), Pandas, Pandas-GBQ[cite: 21, 22].
-* **Visualización & BI:** Looker Studio, Streamlit UI[cite: 12, 22, 31].
+* **Cloud & Serverless:** Google Cloud Platform (Cloud Run Functions, Cloud Scheduler, BigQuery).
+* **IA & Generative AI:** Vertex AI (`text-embedding-004`), Gemini LLM, Vector Search (Similitud Coseno).
+* **Ingeniería de Datos:** Python 3.12, SQL (Vistas analíticas y cruces agregados), Pandas, Pandas-GBQ.
+* **Visualización & BI:** Looker Studio, Streamlit UI.
 
 ---
 
