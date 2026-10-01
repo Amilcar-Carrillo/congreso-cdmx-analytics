@@ -10,28 +10,29 @@ from google.oauth2 import service_account
 # ==============================================================================
 st.set_page_config(
     page_title="Congreso CDMX | Monitor Legislativo e IA",
-    page_icon="🏛️",
+    page_icon="🏛️️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ==============================================================================
-# 2. CONEXIÓN HÍBRIDA A GCP (Streamlit Cloud Secrets / Local gcp-key.json)
+# 2. CONEXIÓN HÍBRIDA A GCP (OAuth Scopes Explícitos para Vertex AI)
 # ==============================================================================
 PROJECT_ID = "proyecto-elt-gcp"
 LOCATION = "us-central1"
 DATASET_ID = "congreso_cdmx"
 GCP_KEY_PATH = "gcp-key.json"
+SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
 @st.cache_resource
 def get_clients():
     # 1. Modo Nube: Cargar desde st.secrets si existe
     if "gcp_service_account" in st.secrets:
         creds = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"]
+            st.secrets["gcp_service_account"],
+            scopes=SCOPES
         )
         bq = bigquery.Client(credentials=creds, project=creds.project_id)
-        # GenAI Client con credenciales explícitas de la Service Account
         ai = genai.Client(
             vertexai=True, 
             project=creds.project_id, 
@@ -43,7 +44,10 @@ def get_clients():
     # 2. Modo Local: Cargar desde el archivo físico si existe
     elif os.path.exists(GCP_KEY_PATH):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCP_KEY_PATH
-        creds = service_account.Credentials.from_service_account_file(GCP_KEY_PATH)
+        creds = service_account.Credentials.from_service_account_file(
+            GCP_KEY_PATH,
+            scopes=SCOPES
+        )
         bq = bigquery.Client(credentials=creds, project=PROJECT_ID)
         ai = genai.Client(
             vertexai=True, 
@@ -53,7 +57,7 @@ def get_clients():
         )
         return bq, ai
 
-    # 3. Fallback: Entorno con credenciales del sistema (ADC)
+    # 3. Fallback: ADC
     else:
         bq = bigquery.Client(project=PROJECT_ID)
         ai = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
@@ -280,7 +284,7 @@ with tab_rag:
         st.session_state["rag_query"] = ""
 
     with c1:
-        if st.button("⚖️️ Iniciativas Aprobadas (Leyes)"):
+        if st.button("⚖️ Iniciativas Aprobadas (Leyes)"):
             st.session_state["rag_query"] = "¿Cuántas y cuáles iniciativas se han aprobado en el Pleno?"
     with c2:
         if st.button("🚦 Movilidad y Obras"):
